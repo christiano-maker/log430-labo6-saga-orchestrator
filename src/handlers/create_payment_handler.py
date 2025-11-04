@@ -4,6 +4,7 @@ SPDX - License - Identifier: LGPL - 3.0 - or -later
 Auteurs : Gabriel C. Ullmann, Fabio Petrillo, 2025
 """
 import requests
+import config
 from logger import Logger
 from handlers.handler import Handler
 from order_saga_state import OrderSagaState
@@ -25,18 +26,33 @@ class CreatePaymentHandler(Handler):
             """
             GET my-api-gateway-address/order/{id} ...
             """
-
+            response = requests.get(f'{config.API_GATEWAY_URL}/store-manager-api/orders/{self.order_id}')
+            if response.ok:
+                data=response.json()
+                self.total_amount = data['total_amount'] if data else 0
+            else:
+                data=response.json()
+                self.logger.error(f"Erreur {response.status_code} : {data}")
+                return OrderSagaState.INCREASING_STOCK
             # TODO: effectuer une requête à /payments pour créer une transaction de paiement
             """
             POST my-api-gateway-address/payments ...
             json={ voir collection Postman pour en savoir plus ... }
             """
-            response_ok = True
-            if response_ok:
+            response = requests.post(f'{config.API_GATEWAY_URL}/payments-api/payments',
+                json={
+                    "order_id": self.order_id,
+                    "user_id": self.order_data["user_id"],
+                    "amount": self.total_amount
+                },
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            if response.ok:
                 self.logger.debug("La création d'une transaction de paiement a réussi")
                 return OrderSagaState.COMPLETED
             else:
-                self.logger.error(f"Erreur : {response_ok}")
+                self.logger.error(f"Erreur : {response.status_code}: {response.text}")
                 return OrderSagaState.INCREASING_STOCK
 
         except Exception as e:
